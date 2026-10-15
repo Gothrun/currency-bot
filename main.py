@@ -10,7 +10,7 @@ import re
 import difflib  # Встроенный модуль для поиска слов с опечатками!
 import aiohttp
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -49,7 +49,16 @@ allowed_users = load_allowed_users()
 
 admin_keyboard = ReplyKeyboardMarkup(
     keyboard=[
+        [KeyboardButton(text="📖 Инструкция"), KeyboardButton(text="👥 Список пользователей")],
         [KeyboardButton(text="➕ Добавить доступ"), KeyboardButton(text="➖ Закрыть доступ")]
+    ],
+    resize_keyboard=True
+)
+
+# Клавиатура для обычных пользователей (только кнопка инструкции)
+user_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📖 Инструкция")]
     ],
     resize_keyboard=True
 )
@@ -154,7 +163,7 @@ async def start_handler(message: types.Message, state: FSMContext):
             "• `984 соом в даларах`\n"
             "• `3924 рупии к ринит`",
             parse_mode="Markdown",
-            reply_markup=ReplyKeyboardRemove()
+            reply_markup=user_keyboard
         )
     else:
         await message.answer(
@@ -164,6 +173,138 @@ async def start_handler(message: types.Message, state: FSMContext):
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardRemove()
         )
+
+# ----------------------------------------------------
+# Инструкция (для всех, у кого есть доступ) и список пользователей (только админ)
+# ----------------------------------------------------
+INSTRUCTION_TEXT = """📖 ИНСТРУКЦИЯ ПО БОТУ
+
+💱 Что это за бот?
+Я конвертер валют. Пишешь сумму и две валюты, а я сразу показываю результат по актуальному курсу.
+
+━━━━━━━━━━━━━━━
+✍️ КАК ПИСАТЬ ЗАПРОС
+
+Формат: сумма, валюта, которую переводим, слово «в» или «к», валюта, в которую переводим.
+
+Примеры:
+• 100 сом в долларах
+• 5000 рублей к сому
+• 250 евро в тенге
+• 3924 рупии к ринггитам
+• 50 usd to kgs
+
+Слова между валютами можно писать любые из этих: в, к, на, to, in. Можно даже просто пробел.
+
+━━━━━━━━━━━━━━━
+🔢 ЕСЛИ НЕ УКАЗАТЬ СУММУ
+
+Напиши только две валюты, и я переведу 1 единицу:
+• рубль к сому
+• доллар в евро
+
+━━━━━━━━━━━━━━━
+🔤 ОПЕЧАТКИ — НЕ ПРОБЛЕМА
+
+Я понимаю слова даже с ошибками. Например, «984 соом в даларах» я пойму как «984 сом в долларах».
+
+Если бот пишет, что не смог распознать валюту, попробуй написать слово точнее или используй код валюты (например, USD, KGS, RUB).
+
+━━━━━━━━━━━━━━━
+🌍 КАКИЕ ВАЛЮТЫ ЕСТЬ
+
+• USD доллар США ($)
+• EUR евро (€)
+• RUB российский рубль (₽)
+• KGS кыргызский сом
+• KZT казахский тенге (₸)
+• UZS узбекский сум
+• TJS таджикский сомони
+• AMD армянский драм
+• GEL грузинский лари (₾)
+• UAH украинская гривна (₴)
+• BYN белорусский рубль
+• TRY турецкая лира (₺)
+• AED дирхам ОАЭ
+• CNY китайский юань (¥)
+• GBP британский фунт (£)
+• CHF швейцарский франк
+• INR индийская рупия (₹)
+• MYR малайзийский ринггит
+• THB тайский бат (฿)
+
+Валюту пиши одним словом: «доллар», а не «доллар США».
+
+━━━━━━━━━━━━━━━
+💡 ВАЖНО ЗНАТЬ
+
+• Дробные числа можно писать и через точку, и через запятую: 12,5 или 12.5
+• Большие суммы можно писать с пробелами: 1 000 000
+• Курсы международные и обновляются раз в сутки, поэтому в банке или обменнике курс может немного отличаться
+• Если бот ответил, что сервер валют недоступен, просто повтори запрос через минуту
+
+━━━━━━━━━━━━━━━
+⌨️ КОМАНДЫ
+
+/start  главное меню
+/help  эта инструкция
+
+Остались вопросы? Напиши администратору бота. 🙂"""
+
+ADMIN_EXTRA_TEXT = """
+
+━━━━━━━━━━━━━━━
+👑 ТОЛЬКО ДЛЯ АДМИНИСТРАТОРА
+
+Кнопки внизу экрана:
+• 👥 Список пользователей показывает всех, у кого есть доступ к боту
+• ➕ Добавить доступ: нажми и отправь Telegram ID человека цифрами
+• ➖ Закрыть доступ: нажми и отправь Telegram ID человека, у которого нужно забрать доступ
+
+Как узнать ID нового пользователя: пусть он напишет боту /start. Бот покажет ему его ID, и он отправит его тебе."""
+
+@dp.message(lambda msg: msg.text == "📖 Инструкция")
+@dp.message(Command("help"))
+async def instruction_handler(message: types.Message):
+    user_id = message.from_user.id
+
+    if user_id != ADMIN_ID and user_id not in allowed_users:
+        await message.answer(f"⛔ Доступ запрещен. Ваш ID: `{user_id}`", parse_mode="Markdown")
+        return
+
+    text = INSTRUCTION_TEXT
+    if user_id == ADMIN_ID:
+        text += ADMIN_EXTRA_TEXT
+        await message.answer(text, reply_markup=admin_keyboard)
+    else:
+        await message.answer(text, reply_markup=user_keyboard)
+
+@dp.message(lambda msg: msg.text == "👥 Список пользователей" and msg.from_user.id == ADMIN_ID)
+async def show_users_list(message: types.Message):
+    if not allowed_users:
+        await message.answer(
+            "👥 Список пользователей пуст.\n"
+            "Дополнительных пользователей пока нет, доступ только у тебя.",
+            reply_markup=admin_keyboard
+        )
+        return
+
+    lines = [f"👥 Пользователи с доступом ({len(allowed_users)}):\n"]
+    for i, uid in enumerate(sorted(allowed_users), start=1):
+        name = ""
+        try:
+            # Пытаемся получить имя и ник (работает, если человек уже писал боту)
+            chat = await bot.get_chat(uid)
+            parts = [chat.first_name or "", chat.last_name or ""]
+            name = " ".join(p for p in parts if p)
+            if chat.username:
+                name += f" (@{chat.username})"
+            name = name.strip()
+        except Exception:
+            name = ""
+        lines.append(f"{i}. {uid}" + (f" — {name}" if name else ""))
+
+    await message.answer("\n".join(lines), reply_markup=admin_keyboard)
 
 # Панель Админа: Нажатие "Добавить доступ"
 @dp.message(lambda msg: msg.text == "➕ Добавить доступ" and msg.from_user.id == ADMIN_ID)
