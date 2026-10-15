@@ -1,0 +1,38 @@
+name: Deploy Currency Bot to VPS
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy files to VPS via SCP
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          source: "."
+          target: "/opt/currency_bot"
+
+      - name: Restart Docker container via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            cd /opt/currency_bot
+            # Если на сервере случайно нет allowed_users.json, создадим пустой файл, чтобы volume не ругался
+            if [ ! -f "allowed_users.json" ]; then
+              echo "{}" > allowed_users.json
+            fi
+            docker stop currency-bot || true
+            docker rm currency-bot || true
+            docker compose down
+            docker compose up --build -d

@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  currency_bot:
+    build: .
+    container_name: currency-bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./allowed_users.json:/app/allowed_users.json
